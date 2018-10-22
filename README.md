@@ -1,6 +1,8 @@
 # Cassandra Operator
 This repository contains the cassandra cluster kubernetes operator. The operator consists of the CustomResourceDefinition (CRD) and a Kubernetes Controller. It is a work in progress.
 
+The image is stored at: https://quay.io/repository/getpantheon/cassandra-operator
+
 ## Operator-SDK
 We are using the `0.0.7` branch of the operator-sdk.
 https://github.com/operator-framework/operator-sdk
