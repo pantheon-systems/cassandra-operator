@@ -1,0 +1,27 @@
+apiVersion: "database.pantheon.io/v1alpha1"
+kind: "CassandraCluster"
+metadata:
+  name: "example-application"
+spec:
+  size: 1 # ring size
+  repair:
+    schedule: "22 6 * * 0,4"
+    image: "quay.io/getpantheon/cassandra-repair:11"
+    runAfterScaleEvent: true
+  node:
+    # replace with some kind of structure that lets you say cassandra version and we pick the image
+    # or specify the image but not both
+    image: "quay.io/getpantheon/cassandra:2x-97"
+    resources:
+      limits:
+        cpu: 2
+        memory: 10Gi
+      requests:
+        cpu: 1
+        memory: 1Gi
+    persistentVolume:
+      capacity:
+        storage: 1000Gi
+      storageClassName: "ssd"
+  datacenter: "test-op-dc" # when multi-dc support is avail this can be set or it can be managed by the system
+  enablePublicPodServices: true

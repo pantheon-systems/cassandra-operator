@@ -1,0 +1,17 @@
+@startuml arch
+
+[Cassandra Cluster CRD] ..> [kubectl]
+
+package "Kubernetes" {
+    [kubectl] ..> [Kubernetes API]
+    [Kubernetes API] ..> [ectd]
+}
+
+package "Kubernetes Node Pool" {
+    [docker] ..> [Cassandra Pods] : orchestrate
+    [Kubernetes API] <..> [kubelet]
+    [kubelet] <..> [docker]
+    [Kubernetes API] <..> [Cassandra Operator]
+    [Cassandra Operator] <..> [Cassandra Pods]
+}
+@enduml

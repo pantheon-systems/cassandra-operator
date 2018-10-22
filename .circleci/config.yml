@@ -1,0 +1,50 @@
+---
+version: 2
+jobs:
+  deps:
+    docker:
+      - image: circleci/golang:1.11
+    working_directory: /go/src/github.com/pantheon-systems/cassandra-operator
+    steps:
+      - checkout
+      - run: make install-sdk
+      - run: make deps
+      - persist_to_workspace:
+          root: /go
+          paths:
+            - ./bin/operator-sdk
+            - ./src/github.com/pantheon-systems/cassandra-operator
+  test:
+    docker:
+      - image: circleci/golang:1.11
+    working_directory: /go/src/github.com/pantheon-systems/cassandra-operator
+    steps:
+      - attach_workspace:
+          at: /go
+      - setup_remote_docker
+      - run: make test-circle
+  build:
+    docker:
+      - image: circleci/golang:1.11
+    working_directory: /go/src/github.com/pantheon-systems/cassandra-operator
+    steps:
+      - attach_workspace:
+          at: /go
+      - setup_remote_docker
+      - run: make build
+      - run: make push
+      - store_artifacts:
+          path: /go/src/github.com/pantheon-systems/cassandra-operator/tmp/_output/bin/cassandra-operator
+
+workflows:
+  version: 2
+  test-build-release:
+    jobs:
+      - deps
+      - test:
+          requires:
+            - deps
+      - build:
+          requires:
+            - deps
+

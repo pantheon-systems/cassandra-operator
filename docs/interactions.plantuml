@@ -1,0 +1,24 @@
+@startuml interaction
+actor KubernetesAPI as Kube
+boundary Handler
+entity StatusManager
+control Sync
+participant Validation
+control Reconcile
+entity NoOp
+
+Kube -> Handler: Events
+
+Handler -> NoOp: Not CassandraCluster
+Handler -> NoOp: Deleted
+Handler -> StatusManager: Calculate Status
+
+StatusManager --> Kube: Update Status
+Handler -> Sync: Is Cassandra Cluster, Not Deleted
+
+Sync -> NoOp: FailedPhase
+Sync -> NoOp: Provisioning
+Sync -> Validation: InitialPhase
+Validation --> Sync: Validated
+Sync -> Reconcile: Initial or Other Phase
+@enduml

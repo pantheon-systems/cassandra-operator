@@ -1,0 +1,21 @@
+[[override]]
+  name = "k8s.io/api"
+  version = "kubernetes-1.9.3"
+
+[[override]]
+  name = "k8s.io/apimachinery"
+  version = "kubernetes-1.9.3"
+
+[[override]]
+  name = "k8s.io/client-go"
+  version = "kubernetes-1.9.3"
+
+[[constraint]]
+  name = "github.com/operator-framework/operator-sdk"
+  # eventually this should be a version=<some version> this commit
+  # is on the master branch
+  revision = "85500b662bfd9b4f2dfea3d2625e2851d2255727"
+
+[[constraint]]
+  name = "github.com/spf13/viper"
+  version = "1.0.2"

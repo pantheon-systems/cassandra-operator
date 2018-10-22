@@ -1,0 +1,22 @@
+@startuml StatusStateMachine
+[*] --> Initial
+Initial --> Initial:PodCount == 0
+Initial --> Creating:PodCount > 0 && len(pods that are in phase creating) > 0
+Creating --> Creating
+Creating --> Initializing
+Creating --> Failed
+Creating:Only ever create cluster of size 1 (using StatefulSet)
+Initializing --> Initializing
+Initializing --> Failed
+Initializing --> Running
+Running --> Running
+Running --> Failed
+Running --> Scaling
+Scaling --> Scaling
+Scaling --> Running
+Scaling --> Failed
+Failed --> Failed
+
+Running --> [*]
+Failed --> [*]
+@enduml
