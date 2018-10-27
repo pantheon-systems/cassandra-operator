@@ -4,39 +4,40 @@ import (
 	"github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
 	"github.com/pantheon-systems/cassandra-operator/pkg/resource"
 	"github.com/sirupsen/logrus"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 // reconcile brings the cassandra cluster in kube to the specified state
-func (c *ClusterController) reconcile() error {
+func (c *ClusterController) reconcile() (reconcile.Result, error) {
 	saName, err := c.convergeServiceAccount()
 	if err != nil {
-		return err
+		return reconcile.Result{}, err
 	}
 
 	err = c.convergeServices()
 	if err != nil {
-		return err
+		return reconcile.Result{}, err
 	}
 	err = c.convergeStatefulSet(saName)
 	if err != nil {
-		return err
+		return reconcile.Result{}, err
 	}
 
 	if c.cluster.Spec.Repair != nil {
 		err = c.convergeRepairCronJob()
 		if err != nil {
-			return err
+			return reconcile.Result{}, err
 		}
 	}
 
 	if c.cluster.Spec.EnablePodDisruptionBudget {
 		err = c.convergeDisruptionBudget()
 		if err != nil {
-			return err
+			return reconcile.Result{}, err
 		}
 	}
 
-	return nil
+	return reconcile.Result{}, nil
 }
 
 func (c *ClusterController) convergeDisruptionBudget() error {

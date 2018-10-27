@@ -1,4 +1,18 @@
+// Important: Run "operator-sdk generate k8s" to regenerate code after modifying this file
 package v1alpha1
+
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+const (
+	// DefaultCassandraImage Default repository for cassandra images
+	DefaultCassandraImage = "quay.io/getpantheon/cassandra"
+	// DefaultCassandraTag Default tag/version for cassandra image
+	DefaultCassandraTag = "2x-64"
+)
+
+var clusterStateDescription = map[ClusterState]string{}
 
 // ClusterPhase type alias for the string representing the phase
 type ClusterPhase string
@@ -31,8 +45,6 @@ const (
 // ClusterState represents a state in the cassandra cluster state-machine
 type ClusterState string
 
-var clusterStateDescription = map[ClusterState]string{}
-
 // Describe returns a description of the cluster state
 func (cs ClusterState) Describe() string {
 	description := clusterStateDescription[cs]
@@ -62,47 +74,68 @@ const (
 	ClusterStateDelete ClusterState = "Delete"
 )
 
-// action (create cluster)
-//    P:Initial S:Initial ->
-//    P: Creating S: Bootstrap(Create services and service account and stuff) ->
-//    P: Creating S: Scale(Node1) ->
-//    P: Creating S: Join(Node1) ->
-//    P: Creating S: Scale(2) ->
-//    P: Creating S: Join(Node2) ->
-//    P: Running  S: Run()
-//
-// action (create cluster failure)
-//    P: Initial S:Initial ->
-//    P: Creating S: Scale(Node1) ->
-//    P: Failed   S: ScaleFailed -> retry
-//
-// action (scale by one)
-//    P: Running  S: Scale(3)
-//    P: Running  S: Join(Node3)
-//    P: Running  S: Repair()
-//    P: Running  S: Run()
-//
-// non-action (single node is failed)
-//    P: Degraded  S: ProbeFailed(nodeDown)  Assumes probe retry et-al detects failure on a node
-//
-// action (scale down 1)
-//    P: Degraded  S: Drain(Node3) ->
-//    P: Degraded  S: Decomissioning(Node3)
-//    P: Degraded  S: Repair()
-//    P: Running   S: Run()
-//
-// action (delete cluster)
-//    P: Terminating S: Drain(Node2) ->
-//    P: Terminating S: Decomissioning(Node2)
-//    P: Terminating S: Drain(Node1) ->
-//    P: Terminating S: Decomissioning(Node1)
-//    P: Deleted     S: Deleted
+func init() {
+	SchemeBuilder.Register(&CassandraCluster{}, &CassandraClusterList{})
+}
 
-// C(Cluster)  -> SS  -> Pods
-//             -> CN(CassaNode Controller Single node)
-//             ->  CN P: S:
-//
-// ClusterPhase represents the phase/state of the cluster
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// CassandraCluster is the Schema for the cassandraclusters API
+// +k8s:openapi-gen=true
+type CassandraCluster struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   ClusterSpec   `json:"spec,omitempty"`
+	Status ClusterStatus `json:"status,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// CassandraClusterList contains a list of CassandraCluster
+type CassandraClusterList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []CassandraCluster `json:"items"`
+}
+
+// ClusterSpec Specification for cassandra cluster for API
+type ClusterSpec struct {
+	Size                      int              `json:"size"`
+	Repair                    *RepairPolicy    `json:"repair,omitempty"`
+	Node                      *NodePolicy      `json:"node"`
+	KeyspaceName              string           `json:"keyspaceName,omitempty"`
+	SecretName                string           `json:"secretName,omitempty"`
+	ConfigMapName             string           `json:"configMapName,omitempty"`
+	JvmAgentConfigName        string           `json:"jvmAgentConfigName,omitemtpy"`
+	JvmAgent                  string           `json:"jvmAgent,omitempty"`
+	Datacenter                string           `json:"datacenter"`
+	ExternalSeeds             []string         `json:"externalSeeds,omitempty"`
+	EnablePublicPodServices   bool             `json:"enablePublicPodServices"`
+	ExposePublicLB            bool             `json:"exposePublicLB"`
+	EnablePodDisruptionBudget bool             `json:"enablePodDisruptionBudget"`
+	Affinity                  *corev1.Affinity `json:"affinity,omitempty"`
+}
+
+// RepairPolicy sets the policies for the automated cassandra repair job
+type RepairPolicy struct {
+	Schedule string `json:"schedule"`
+	Image    string `json:"image,omitempty"`
+}
+
+// NodePolicy specifies the details of constructing a cassandra node
+type NodePolicy struct {
+	Resources        *corev1.ResourceRequirements `json:"resources,omitempty"`
+	PersistentVolume *PersistentVolumeSpec        `json:"persistentVolume,omitempty"`
+	Image            string                       `json:"image"`
+	FileMountPath    string                       `json:"fileMountPath"`
+}
+
+// PersistentVolumeSpec exposes configurables for the PV for the stateful set
+type PersistentVolumeSpec struct {
+	StorageClassName string              `json:"storageClass,omitempty"`
+	Capacity         corev1.ResourceList `json:"resources,omitempty"`
+}
 
 // ClusterStatus specifies the status of the cassandra cluster
 type ClusterStatus struct {
