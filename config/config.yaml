@@ -1,3 +1,0 @@
-apiVersion: database.pantheon.io/v1alpha1
-kind: CassandraCluster
-projectName: cassandra-operator
