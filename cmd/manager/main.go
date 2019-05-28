@@ -80,14 +80,14 @@ func main() {
 		log.Fatal(err)
 	}
 
+	ctx, _ := setupSignalHandler()
+
 	// Setup all Controllers
-	if err := controller.AddToManager(mgr); err != nil {
+	if err := controller.AddToManager(ctx, mgr); err != nil {
 		log.Fatal(err)
 	}
 
 	log.Print("Starting the Cmd.")
-
-	ctx, _ := setupSignalHandler()
 
 	// Start the Cmd
 	log.Fatal(mgr.Start(ctx.Done()))

@@ -1,111 +1,99 @@
 package cassandracluster
 
-//"github.com/pantheon-systems/cassandra-operator/pkg/resource"
+import (
+	"github.com/Sirupsen/logrus"
+	"github.com/pantheon-systems/cassandra-operator/pkg/apis/database/v1alpha1"
+	"github.com/pantheon-systems/cassandra-operator/pkg/resource"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/runtime"
+)
 
 // reconcile brings the cassandra cluster in kube to the specified state
-func (c *ReconcileCassandraCluster) reconcile() error {
-	// saName, err := c.convergeServiceAccount()
-	// if err != nil {
-	// 	return err
-	// }
+func (c *ReconcileCassandraCluster) reconcile(cluster *v1alpha1.CassandraCluster) error {
+	logrus.Debugln("Converging ServiceAccount")
+	serviceAccount, err := resource.NewServiceAccount(cluster).Reconcile(c.ctx, c.client)
+	if err != nil {
+		return err
+	}
 
-	// err = c.convergeServices()
-	// if err != nil {
-	// 	return err
-	// }
-	// err = c.convergeStatefulSet(saName)
-	// if err != nil {
-	// 	return err
-	// }
+	saMetaAccessor, err := meta.Accessor(serviceAccount)
+	if err != nil {
+		return err
+	}
 
-	// if c.cluster.Spec.Repair != nil {
-	// 	err = c.convergeRepairCronJob()
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// }
+	logrus.Debugln("Converging public service")
+	_, err = resource.NewService(cluster, resource.WithServiceType(resource.ServiceTypePublicLB)).Reconcile(c.ctx, c.client)
+	if err != nil {
+		return err
+	}
 
-	// if c.cluster.Spec.EnablePodDisruptionBudget {
-	// 	err = c.convergeDisruptionBudget()
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// }
+	logrus.Debugln("Converging internal service")
+	_, err = resource.NewService(cluster, resource.WithServiceType(resource.ServiceTypeInternal)).Reconcile(c.ctx, c.client)
+	if err != nil {
+		return err
+	}
+
+	logrus.Debugln("Converging headless service")
+	headless, err := resource.NewService(cluster, resource.WithServiceType(resource.ServiceTypeHeadless)).Reconcile(c.ctx, c.client)
+	if err != nil {
+		return err
+	}
+
+	if cluster.Spec.EnablePublicPodServices {
+		_, err := c.convergePublicPodServices(cluster)
+		if err != nil {
+			return err
+		}
+	}
+
+	headlessMetaAccessor, err := meta.Accessor(headless)
+	if err != nil {
+		return err
+	}
+
+	logrus.Debugln("Converging statefulset")
+	_, err = resource.NewStatefulSet(
+		cluster,
+		resource.WithServiceName(headlessMetaAccessor.GetName()),
+		resource.WithServiceAccountName(saMetaAccessor.GetName()),
+	).Reconcile(c.ctx, c.client)
+	if err != nil {
+		return err
+	}
+
+	if cluster.Spec.Repair != nil {
+		logrus.Debugln("Converging repair cron job")
+		_, err := resource.NewRepairCronJob(cluster).Reconcile(c.ctx, c.client)
+		if err != nil {
+			return err
+		}
+	}
+
+	if cluster.Spec.EnablePodDisruptionBudget {
+		logrus.Debugln("Converging PodDisruptionBudget")
+		_, err := resource.NewPodDisruptionBudget(cluster).Reconcile(c.ctx, c.client)
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
 
-// func (c *ReconcileCassandraCluster) convergeDisruptionBudget() error {
-// 	logrus.Debugln("Converging PodDisruptionBudget")
-// 	_, err := resource.NewPodDisruptionBudget(c.cluster).Reconcile(c.driver)
-// 	return err
-// }
+func (c *ReconcileCassandraCluster) convergePublicPodServices(cluster *v1alpha1.CassandraCluster) ([]runtime.Object, error) {
+	services := []runtime.Object{}
+	logrus.Debugln("Converging public pod services")
+	for i := 0; i < cluster.Spec.Size; i++ {
+		podPublic, err := resource.NewService(
+			cluster,
+			resource.WithServiceType(resource.ServiceTypePublicPod),
+			resource.WithPodNumber(i),
+		).Reconcile(c.ctx, c.client)
+		if err != nil {
+			return nil, err
+		}
+		services[i] = podPublic
+	}
 
-// func (c *ClusterController) convergeRepairCronJob() error {
-// 	logrus.Debugln("Converging repair cron job")
-// 	_, err := resource.NewRepairCronJob(c.cluster).Reconcile(c.driver)
-// 	return err
-// }
-
-// func (c *ClusterController) convergeStatefulSet(serviceAccountName string) error {
-// 	logrus.Debugln("Converging statefulset")
-
-// 	_, err := resource.NewStatefulSet(
-// 		c.cluster,
-// 		resource.WithServiceName(c.headlessServiceName),
-// 		resource.WithServiceAccountName(serviceAccountName),
-// 	).Reconcile(c.driver)
-
-// 	return err
-// }
-
-// func (c *ReconcileCassandraCluster) convergeServiceAccount() (string, error) {
-// 	logrus.Debugln("Converging ServiceAccount")
-// 	obj, err := resource.NewServiceAccount(c.cluster).Reconcile(c.driver)
-// 	if err != nil {
-// 		return "", err
-// 	}
-// 	name, _, err := k8sutil.GetNameAndNamespace(obj)
-
-// 	return name, err
-// }
-
-// // convergeService creates or updates the services required by the operator
-// func (c *ReconcileCassandraCluster) convergeServices() error {
-// 	logrus.Debugln("Converging public service")
-// 	_, err := resource.NewService(c.cluster, resource.WithServiceType(resource.ServiceTypePublicLB)).Reconcile(c.driver)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	logrus.Debugln("Converging internal service")
-// 	_, err = resource.NewService(c.cluster, resource.WithServiceType(resource.ServiceTypeInternal)).Reconcile(c.driver)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	logrus.Debugln("Converging headless service")
-// 	headlessService, err := resource.NewService(c.cluster, resource.WithServiceType(resource.ServiceTypeHeadless)).Reconcile(c.driver)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	c.headlessServiceName, _, err = k8sutil.GetNameAndNamespace(headlessService)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	if c.cluster.Spec.EnablePublicPodServices {
-// 		logrus.Debugln("Converging public pod services")
-// 		for i := 0; i < c.cluster.Spec.Size; i++ {
-// 			_, err = resource.NewService(
-// 				c.cluster,
-// 				resource.WithServiceType(resource.ServiceTypePublicPod),
-// 				resource.WithPodNumber(i),
-// 			).Reconcile(c.driver)
-// 			if err != nil {
-// 				return err
-// 			}
-// 		}
-// 	}
-
-// 	return nil
-// }
+	return services, nil
+}

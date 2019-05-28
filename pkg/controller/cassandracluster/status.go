@@ -6,7 +6,6 @@ import (
 
 	"github.com/pantheon-systems/cassandra-operator/pkg/backend/nodetool"
 
-	//"github.com/pantheon-systems/cassandra-operator/pkg/resource"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/pantheon-systems/cassandra-operator/pkg/apis/database/v1alpha1"
@@ -25,13 +24,15 @@ type nodeStatusReporter interface {
 type ClusterStatusManager struct {
 	nodeStatusReporter nodeStatusReporter
 	k8sClient          client.Client
+	ctx                context.Context
 }
 
 // NewStatusManager returns a new ClusterStatusController to get the status of the cluster
-func NewStatusManager(statusReporter nodeStatusReporter, k8sClient client.Client) *ClusterStatusManager {
+func NewStatusManager(ctx context.Context, statusReporter nodeStatusReporter, k8sClient client.Client) *ClusterStatusManager {
 	return &ClusterStatusManager{
 		nodeStatusReporter: statusReporter,
 		k8sClient:          k8sClient,
+		ctx:                ctx,
 	}
 }
 
@@ -43,7 +44,7 @@ func (c *ClusterStatusManager) Update(cc *v1alpha1.CassandraCluster) error {
 	}
 
 	currentStatus.DeepCopyInto(&cc.Status)
-	return c.k8sClient.Update(context.TODO(), cc)
+	return c.k8sClient.Update(c.ctx, cc)
 }
 
 func (c *ClusterStatusManager) getClusterStatus(cc *v1alpha1.CassandraCluster) (*v1alpha1.ClusterStatus, error) {
@@ -234,16 +235,12 @@ func (c *ClusterStatusManager) getClusterPods(clusterName, namespace string, clu
 		labelSelector["app"] = appName
 	}
 
-	/*listOpts := &metav1.ListOptions{
-		LabelSelector: labels.SelectorFromSet(labelSelector).String(),
-	}*/
-
 	listOpts := &client.ListOptions{
 		LabelSelector: labels.SelectorFromSet(labelSelector),
 		Namespace:     namespace,
 	}
 
-	err := c.k8sClient.List(context.TODO(), listOpts, pods)
+	err := c.k8sClient.List(c.ctx, listOpts, pods)
 	if err != nil {
 		return nil, fmt.Errorf("Could not list pods for cluster %s: %s", clusterName, err)
 	}

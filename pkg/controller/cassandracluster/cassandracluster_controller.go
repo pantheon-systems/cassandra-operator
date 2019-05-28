@@ -29,19 +29,25 @@ const (
 
 // Add creates a new CassandraCluster Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
-func Add(mgr manager.Manager) error {
+func Add(ctx context.Context, mgr manager.Manager) error {
 	k8sPodExecutor := k8s.NewPodExecutor(mgr.GetConfig())
 	nodetoolClient := nodetool.NewExecutor(k8sPodExecutor)
 
 	k8sClient := mgr.GetClient()
-	statusManager := NewStatusManager(nodetoolClient, k8sClient)
-	
-	return add(mgr, newReconciler(mgr, nodetoolClient, statusManager))
+	statusManager := NewStatusManager(ctx, nodetoolClient, k8sClient)
+
+	return add(mgr, newReconciler(ctx, mgr, nodetoolClient, statusManager))
 }
 
 // newReconciler returns a new reconcile.Reconciler
-func newReconciler(mgr manager.Manager, nodetoolClient *nodetool.Executor, statusMgr *ClusterStatusManager) reconcile.Reconciler {
-	return &ReconcileCassandraCluster{client: mgr.GetClient(), scheme: mgr.GetScheme(), nodetoolClient: nodetoolClient, statusMgr: statusMgr}
+func newReconciler(ctx context.Context, mgr manager.Manager, nodetoolClient *nodetool.Executor, statusMgr *ClusterStatusManager) reconcile.Reconciler {
+	return &ReconcileCassandraCluster{
+		ctx:            ctx,
+		client:         mgr.GetClient(),
+		scheme:         mgr.GetScheme(),
+		nodetoolClient: nodetoolClient,
+		statusMgr:      statusMgr,
+	}
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
@@ -81,6 +87,7 @@ type ReconcileCassandraCluster struct {
 
 	statusMgr      *ClusterStatusManager
 	nodetoolClient *nodetool.Executor
+	ctx            context.Context
 }
 
 // Reconcile reads that state of the cluster for a CassandraCluster object and makes changes based on the state read
@@ -93,7 +100,7 @@ func (r *ReconcileCassandraCluster) Reconcile(request reconcile.Request) (reconc
 
 	// Fetch the CassandraCluster instance
 	instance := &databasev1alpha1.CassandraCluster{}
-	err := r.client.Get(context.TODO(), request.NamespacedName, instance)
+	err := r.client.Get(r.ctx, request.NamespacedName, instance)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
@@ -120,8 +127,7 @@ func (r *ReconcileCassandraCluster) Reconcile(request reconcile.Request) (reconc
 	switch instance.Status.Phase {
 	case "":
 		instance.Annotations["database.panth.io/cassandra-operator-version"] = version.Version
-		ctx := context.TODO()
-		err := r.client.Update(ctx, instance)
+		err := r.client.Update(r.ctx, instance)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -151,7 +157,7 @@ func (r *ReconcileCassandraCluster) Reconcile(request reconcile.Request) (reconc
 		}
 	}
 
-	//err = r.reconcile()
+	err = r.reconcile(instance)
 	return reconcile.Result{}, err
 }
 

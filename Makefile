@@ -1,7 +1,7 @@
 APP := cassandra-operator
-VERSION := 0.0.1
+VERSION := 0.1.0
 UNIQUE_TAG ?= $(shell git rev-parse HEAD)
-SDK_RELEASE_URL :=  https://github.com/operator-framework/operator-sdk/releases/download/v0.0.7/operator-sdk-v0.0.7-x86_64-linux-gnu
+SDK_RELEASE_URL :=  https://github.com/operator-framework/operator-sdk/releases/download/v0.1.0/operator-sdk-v0.1.0-x86_64-linux-gnu
 
 include _go.mk
 
