@@ -7,10 +7,13 @@ import (
 
 	"github.com/pantheon-systems/cassandra-operator/pkg/apis/database/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // ClusterServiceType represents the different services that this
@@ -69,7 +72,7 @@ func (b *Service) Reconcile(ctx context.Context, driver client.Client) (runtime.
 
 	existing := &corev1.Service{}
 	err = driver.Get(ctx, namespacedName, existing)
-	if err != nil {
+	if err != nil && !k8serrors.IsNotFound(err) {
 		return nil, errors.New("could not get existing")
 	}
 
@@ -116,7 +119,7 @@ func (b *Service) buildConfigured(clusterServiceType ClusterServiceType) error {
 	b.configureDefaultSelectors()
 	b.configureDefaultLabels()
 
-	//b.setOwner(asOwner(b.cluster))
+	controllerutil.SetControllerReference(b.cluster, b.configured, scheme.Scheme)
 	return nil
 }
 

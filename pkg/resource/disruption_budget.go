@@ -7,11 +7,14 @@ import (
 
 	"github.com/pantheon-systems/cassandra-operator/pkg/apis/database/v1alpha1"
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // PodDisruptionBudget class that builds a PodDisruptionBudiget and reconciles the
@@ -39,7 +42,7 @@ func (b *PodDisruptionBudget) Reconcile(ctx context.Context, driver client.Clien
 
 	existing := &policyv1beta1.PodDisruptionBudget{}
 	err := driver.Get(ctx, namespacedName, existing)
-	if err != nil {
+	if err != nil && !k8serrors.IsNotFound(err) {
 		return nil, errors.New("could not get existing")
 	}
 
@@ -72,7 +75,7 @@ func (b *PodDisruptionBudget) buildDesired() {
 	}
 
 	b.buildSelector()
-	//b.setOwner(asOwner(b.cluster))
+	controllerutil.SetControllerReference(b.cluster, b.desired, scheme.Scheme)
 }
 
 func (b *PodDisruptionBudget) buildSelector() {
@@ -85,7 +88,3 @@ func (b *PodDisruptionBudget) buildSelector() {
 		b.desired.Spec.Selector.MatchLabels["app"] = appName
 	}
 }
-
-// func (b *PodDisruptionBudget) setOwner(owner metav1.OwnerReference) {
-// 	b.desired.SetOwnerReferences(append(b.desired.GetOwnerReferences(), owner))
-// }

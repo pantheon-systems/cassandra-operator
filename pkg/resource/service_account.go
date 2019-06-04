@@ -11,7 +11,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // ServiceAccount is a reconciller for configured vs actual for service account
@@ -41,7 +43,7 @@ func (b *ServiceAccount) Reconcile(ctx context.Context, driver client.Client) (r
 
 	existing := &corev1.ServiceAccount{}
 	err = driver.Get(ctx, namespacedName, existing)
-	if err != nil {
+	if err != nil && !k8serrors.IsNotFound(err) {
 		return nil, errors.New("could not get existing")
 	}
 
@@ -75,11 +77,7 @@ func (b *ServiceAccount) buildConfigured() error {
 		},
 	}
 
-	//db.setOwner(asOwner(b.cluster))
+	controllerutil.SetControllerReference(b.cluster, b.configured, scheme.Scheme)
 
 	return nil
 }
-
-// func (b *ServiceAccount) setOwner(owner metav1.OwnerReference) {
-// 	b.configured.SetOwnerReferences(append(b.configured.GetOwnerReferences(), owner))
-// }

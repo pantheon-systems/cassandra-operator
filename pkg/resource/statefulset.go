@@ -8,11 +8,14 @@ import (
 	"github.com/pantheon-systems/cassandra-operator/pkg/apis/database/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 var (
@@ -65,7 +68,7 @@ func (b *StatefulSet) Reconcile(ctx context.Context, driver client.Client) (runt
 
 	existing := &appsv1.StatefulSet{}
 	err = driver.Get(ctx, namespacedName, existing)
-	if err != nil {
+	if err != nil && !k8serrors.IsNotFound(err) {
 		return nil, errors.New("could not get existing")
 	}
 
@@ -222,7 +225,7 @@ func (b *StatefulSet) configureDesired() {
 
 	b.buildDesiredCassandraPodSpec()
 	b.buildLabels()
-	//b.setOwner(asOwner(b.cluster))
+	controllerutil.SetControllerReference(b.cluster, b.desired, scheme.Scheme)
 	b.buildVolumeClaimTemplates()
 
 	// TODO: JvmAgent should be itoa or string enum
@@ -290,7 +293,3 @@ func (b *StatefulSet) buildVolumeClaimTemplates() {
 		},
 	}
 }
-
-// func (b *StatefulSet) setOwner(owner metav1.OwnerReference) {
-// 	b.desired.SetOwnerReferences(append(b.desired.GetOwnerReferences(), owner))
-// }
