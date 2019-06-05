@@ -1,32 +1,29 @@
 package resource_test
 
 import (
-	"errors"
-	"github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
-	"github.com/pantheon-systems/cassandra-operator/pkg/backend/k8s"
-	"github.com/pantheon-systems/cassandra-operator/pkg/resource"
-	"k8s.io/apimachinery/pkg/runtime/schema"
+	"context"
 	"reflect"
 	"testing"
 
-	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/pantheon-systems/cassandra-operator/pkg/apis/database/v1alpha1"
+	"github.com/pantheon-systems/cassandra-operator/pkg/resource"
+	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestServiceAccount_Reconcile(t *testing.T) {
 	type fields struct {
-		actual          *corev1.ServiceAccount
-		cluster         *v1alpha1.CassandraCluster
-		mockGetError    error
-		mockCreateError error
+		actual  *corev1.ServiceAccount
+		cluster *v1alpha1.CassandraCluster
 	}
 	tests := []struct {
 		name    string
 		fields  fields
-		want    sdk.Object
+		want    runtime.Object
 		wantErr bool
 	}{
 		{
@@ -52,7 +49,7 @@ func TestServiceAccount_Reconcile(t *testing.T) {
 					Name:      "test-cluster-1-service-account",
 					Namespace: "test-namespace",
 					OwnerReferences: []metav1.OwnerReference{
-						{Name: "test-cluster-1", Controller: &trueVar},
+						{Name: "test-cluster-1", APIVersion: "v1", Kind: "CassandraCluster"},
 					},
 				},
 				ImagePullSecrets: []corev1.LocalObjectReference{
@@ -68,6 +65,8 @@ func TestServiceAccount_Reconcile(t *testing.T) {
 			fields: fields{
 				actual: &corev1.ServiceAccount{
 					ObjectMeta: metav1.ObjectMeta{
+						Name:            "test-cluster-1",
+						Namespace:       "test-namespace",
 						ResourceVersion: "test-resource-version",
 					},
 				},
@@ -80,10 +79,6 @@ func TestServiceAccount_Reconcile(t *testing.T) {
 						},
 					},
 				},
-				mockCreateError: k8serrors.NewAlreadyExists(
-					schema.GroupResource{Group: "", Resource: "serviceaccounts"},
-					"test-cluster-1-service-account",
-				),
 			},
 			want: &corev1.ServiceAccount{
 				TypeMeta: metav1.TypeMeta{
@@ -95,7 +90,7 @@ func TestServiceAccount_Reconcile(t *testing.T) {
 					Namespace:       "test-namespace",
 					ResourceVersion: "test-resource-version",
 					OwnerReferences: []metav1.OwnerReference{
-						{Name: "test-cluster-1", Controller: &trueVar},
+						{Name: "test-cluster-1", APIVersion: "v1", Kind: "CassandraCluster"},
 					},
 				},
 				ImagePullSecrets: []corev1.LocalObjectReference{
@@ -106,59 +101,39 @@ func TestServiceAccount_Reconcile(t *testing.T) {
 			},
 			wantErr: false,
 		},
-		{
-			name: "get-error",
-			fields: fields{
-				actual:       nil,
-				cluster:      &v1alpha1.CassandraCluster{},
-				mockGetError: errors.New("some other error"),
-			},
-			want:    nil,
-			wantErr: true,
-		},
-		{
-			name: "create-error",
-			fields: fields{
-				actual:          nil,
-				cluster:         &v1alpha1.CassandraCluster{},
-				mockCreateError: errors.New("some other error"),
-			},
-			want:    nil,
-			wantErr: true,
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockClient := &k8s.MockClient{
-				GetCallback: func(into sdk.Object, opts ...sdk.GetOption) error {
-					if tt.fields.mockGetError != nil {
-						return tt.fields.mockGetError
-					}
+			s := scheme.Scheme
+			s.AddKnownTypes(corev1.SchemeGroupVersion, tt.fields.cluster)
 
-					if tt.fields.actual != nil {
-						if err := k8sutil.RuntimeObjectIntoRuntimeObject(tt.fields.actual, into); err != nil {
-							return err
-						}
-					}
-
-					return nil
-				},
-				CreateCallback: func(object sdk.Object) error {
-					if tt.fields.mockCreateError != nil {
-						return tt.fields.mockCreateError
-					}
-					return nil
-				},
+			objs := []runtime.Object{}
+			if tt.fields.actual != nil {
+				objs = append(objs, tt.fields.actual)
 			}
 
+			mockClient := fake.NewFakeClient(objs...)
 			b := resource.NewServiceAccount(tt.fields.cluster)
-			got, err := b.Reconcile(mockClient)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ServiceAccount.Reconcile() error = %v, wantErr %v", err, tt.wantErr)
+			result, err := b.Reconcile(context.TODO(), mockClient)
+
+			if tt.wantErr {
+				assert.Error(t, err)
 				return
+			} else {
+				assert.NoError(t, err)
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("ServiceAccount.Reconcile() = %v, want %v", got, tt.want)
+
+			// we need to ignore
+			//   ObjectMeta.OwnerReferences.Controller
+			//   ObjectMeta.OwnerReferences.BlockOwnerDeletion
+			ctrlOwnerRef := reflect.ValueOf(result).Elem().FieldByName("ObjectMeta").FieldByName("OwnerReferences").Index(0)
+			ctrl := ctrlOwnerRef.FieldByName("Controller")
+			ctrl.Set(reflect.Zero(ctrl.Type()))
+			blockOwnerDeletion := ctrlOwnerRef.FieldByName("BlockOwnerDeletion")
+			blockOwnerDeletion.Set(reflect.Zero(blockOwnerDeletion.Type()))
+
+			if !reflect.DeepEqual(result, tt.want) {
+				t.Errorf("ServiceAccount.Reconcile() = %v, want %v", result, tt.want)
 			}
 		})
 	}

@@ -1,9 +1,7 @@
-package controller_test
+package cassandracluster_test
 
 import (
 	"fmt"
-	"github.com/operator-framework/operator-sdk/pkg/sdk"
-	"github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
 	"github.com/pantheon-systems/cassandra-operator/pkg/apis/database/v1alpha1"
 	"github.com/pantheon-systems/cassandra-operator/pkg/backend/k8s"
 	"github.com/pantheon-systems/cassandra-operator/pkg/backend/nodetool"

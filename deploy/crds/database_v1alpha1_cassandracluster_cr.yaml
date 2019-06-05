@@ -1,0 +1,7 @@
+apiVersion: database.pantheon.io/v1alpha1
+kind: CassandraCluster
+metadata:
+  name: example-cassandracluster
+spec:
+  # Add fields here
+  size: 3

@@ -1,17 +1,19 @@
 package resource_test
 
 import (
-	"errors"
-	"github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
-	"github.com/pantheon-systems/cassandra-operator/pkg/backend/k8s"
-	"github.com/pantheon-systems/cassandra-operator/pkg/resource"
+	"context"
 	"reflect"
 	"testing"
 
-	"github.com/operator-framework/operator-sdk/pkg/sdk"
+	"github.com/pantheon-systems/cassandra-operator/pkg/resource"
+	"github.com/stretchr/testify/assert"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
 	"github.com/pantheon-systems/cassandra-operator/pkg/apis/database/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/scheme"
 )
 
 const (
@@ -20,16 +22,14 @@ const (
 
 func TestService_Reconcile(t *testing.T) {
 	type fields struct {
-		mockGetError            error
-		mockCreateOrUpdateError error
-		actual                  *corev1.Service
-		cluster                 *v1alpha1.CassandraCluster
-		options                 []resource.BuilderOption
+		actual  *corev1.Service
+		cluster *v1alpha1.CassandraCluster
+		options []resource.BuilderOption
 	}
 	tests := []struct {
 		name    string
 		fields  fields
-		want    sdk.Object
+		want    runtime.Object
 		wantErr bool
 	}{
 		{
@@ -66,27 +66,6 @@ func TestService_Reconcile(t *testing.T) {
 					},
 				},
 				options: []resource.BuilderOption{},
-			},
-			want:    nil,
-			wantErr: true,
-		},
-		{
-			name: "get error",
-			fields: fields{
-				actual: nil,
-				cluster: &v1alpha1.CassandraCluster{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-cluster-1",
-						Namespace: "test-namespace",
-						Labels: map[string]string{
-							"app": "test-app",
-						},
-					},
-				},
-				options: []resource.BuilderOption{
-					resource.WithServiceType(resource.ServiceTypePublicLB),
-				},
-				mockGetError: errors.New("some error"),
 			},
 			want:    nil,
 			wantErr: true,
@@ -132,10 +111,7 @@ func TestService_Reconcile(t *testing.T) {
 						"service-type": "public",
 					},
 					OwnerReferences: []metav1.OwnerReference{
-						{
-							Name:       "test-cluster-1",
-							Controller: &trueVar,
-						},
+						{Name: "test-cluster-1", APIVersion: "v1", Kind: "CassandraCluster"},
 					},
 					ResourceVersion: "existing-resource-version",
 				},
@@ -191,10 +167,7 @@ func TestService_Reconcile(t *testing.T) {
 						"service-type": "public",
 					},
 					OwnerReferences: []metav1.OwnerReference{
-						{
-							Name:       "test-cluster-1",
-							Controller: &trueVar,
-						},
+						{Name: "test-cluster-1", APIVersion: "v1", Kind: "CassandraCluster"},
 					},
 				},
 				Spec: corev1.ServiceSpec{
@@ -250,10 +223,7 @@ func TestService_Reconcile(t *testing.T) {
 						"service-type": "public-pod",
 					},
 					OwnerReferences: []metav1.OwnerReference{
-						{
-							Name:       "test-cluster-1",
-							Controller: &trueVar,
-						},
+						{Name: "test-cluster-1", APIVersion: "v1", Kind: "CassandraCluster"},
 					},
 				},
 				Spec: corev1.ServiceSpec{
@@ -305,10 +275,7 @@ func TestService_Reconcile(t *testing.T) {
 						"service-type": "headless",
 					},
 					OwnerReferences: []metav1.OwnerReference{
-						{
-							Name:       "test-cluster-1",
-							Controller: &trueVar,
-						},
+						{Name: "test-cluster-1", APIVersion: "v1", Kind: "CassandraCluster"},
 					},
 				},
 				Spec: corev1.ServiceSpec{
@@ -363,10 +330,7 @@ func TestService_Reconcile(t *testing.T) {
 						"service-type": "internal",
 					},
 					OwnerReferences: []metav1.OwnerReference{
-						{
-							Name:       "test-cluster-1",
-							Controller: &trueVar,
-						},
+						{Name: "test-cluster-1", APIVersion: "v1", Kind: "CassandraCluster"},
 					},
 				},
 				Spec: corev1.ServiceSpec{
@@ -397,42 +361,36 @@ func TestService_Reconcile(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockClient := &k8s.MockClient{
-				GetCallback: func(into sdk.Object, opts ...sdk.GetOption) error {
-					if tt.fields.mockGetError != nil {
-						return tt.fields.mockGetError
-					}
+			s := scheme.Scheme
+			s.AddKnownTypes(corev1.SchemeGroupVersion, tt.fields.cluster)
 
-					if tt.fields.actual != nil {
-						if err := k8sutil.RuntimeObjectIntoRuntimeObject(tt.fields.actual, into); err != nil {
-							return err
-						}
-					}
-
-					return nil
-				},
-				CreateCallback: func(object sdk.Object) error {
-					if tt.fields.mockCreateOrUpdateError != nil {
-						return tt.fields.mockCreateOrUpdateError
-					}
-					return nil
-				},
-				UpdateCallback: func(object sdk.Object) error {
-					if tt.fields.mockCreateOrUpdateError != nil {
-						return tt.fields.mockCreateOrUpdateError
-					}
-					return nil
-				},
+			objs := []runtime.Object{}
+			if tt.fields.actual != nil {
+				objs = append(objs, tt.fields.actual)
 			}
 
+			mockClient := fake.NewFakeClient(objs...)
 			b := resource.NewService(tt.fields.cluster, tt.fields.options...)
-			got, err := b.Reconcile(mockClient)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Service.Reconcile() error = %v, wantErr %v", err, tt.wantErr)
+			result, err := b.Reconcile(context.TODO(), mockClient)
+
+			if tt.wantErr {
+				assert.Error(t, err)
 				return
+			} else {
+				assert.NoError(t, err)
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Service.Reconcile() = %v, want %v", got, tt.want)
+
+			// we need to ignore
+			//   ObjectMeta.OwnerReferences.Controller
+			//   ObjectMeta.OwnerReferences.BlockOwnerDeletion
+			ctrlOwnerRef := reflect.ValueOf(result).Elem().FieldByName("ObjectMeta").FieldByName("OwnerReferences").Index(0)
+			ctrl := ctrlOwnerRef.FieldByName("Controller")
+			ctrl.Set(reflect.Zero(ctrl.Type()))
+			blockOwnerDeletion := ctrlOwnerRef.FieldByName("BlockOwnerDeletion")
+			blockOwnerDeletion.Set(reflect.Zero(blockOwnerDeletion.Type()))
+
+			if !reflect.DeepEqual(result, tt.want) {
+				t.Errorf("Service.Reconcile() = %v, want %v", result, tt.want)
 			}
 		})
 	}

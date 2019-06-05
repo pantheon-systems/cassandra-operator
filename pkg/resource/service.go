@@ -1,13 +1,19 @@
 package resource
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"github.com/operator-framework/operator-sdk/pkg/sdk"
+
 	"github.com/pantheon-systems/cassandra-operator/pkg/apis/database/v1alpha1"
-	opsdk "github.com/pantheon-systems/cassandra-operator/pkg/backend/k8s"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // ClusterServiceType represents the different services that this
@@ -47,7 +53,7 @@ func NewService(cc *v1alpha1.CassandraCluster, opts ...BuilderOption) *Service {
 
 // Reconcile takes the current state and creates an object that will reconcile that
 // to the desired state
-func (b *Service) Reconcile(driver opsdk.Client) (sdk.Object, error) {
+func (b *Service) Reconcile(ctx context.Context, driver client.Client) (runtime.Object, error) {
 	var err error
 
 	if b.options.ServiceType == ServiceTypeNone {
@@ -59,12 +65,14 @@ func (b *Service) Reconcile(driver opsdk.Client) (sdk.Object, error) {
 		return nil, err
 	}
 
-	existing := &corev1.Service{
-		TypeMeta:   GetServiceTypeMeta(),
-		ObjectMeta: b.configured.ObjectMeta,
+	namespacedName := types.NamespacedName{
+		Namespace: b.configured.GetNamespace(),
+		Name:      b.configured.GetName(),
 	}
-	err = driver.Get(existing)
-	if err != nil {
+
+	existing := &corev1.Service{}
+	err = driver.Get(ctx, namespacedName, existing)
+	if err != nil && !k8serrors.IsNotFound(err) {
 		return nil, errors.New("could not get existing")
 	}
 
@@ -74,9 +82,9 @@ func (b *Service) Reconcile(driver opsdk.Client) (sdk.Object, error) {
 		// the reconciled object
 		b.configured.ResourceVersion = existing.ResourceVersion
 		b.configured.Spec.ClusterIP = existing.Spec.ClusterIP
-		err = driver.Update(b.configured)
+		err = driver.Update(ctx, b.configured)
 	} else {
-		err = driver.Create(b.configured)
+		err = driver.Create(ctx, b.configured)
 	}
 
 	if err != nil {
@@ -111,7 +119,7 @@ func (b *Service) buildConfigured(clusterServiceType ClusterServiceType) error {
 	b.configureDefaultSelectors()
 	b.configureDefaultLabels()
 
-	b.setOwner(asOwner(b.cluster))
+	controllerutil.SetControllerReference(b.cluster, b.configured, scheme.Scheme)
 	return nil
 }
 
@@ -233,6 +241,6 @@ func (b *Service) configureDefaultSelectors() {
 	}
 }
 
-func (b *Service) setOwner(owner metav1.OwnerReference) {
-	b.configured.SetOwnerReferences(append(b.configured.GetOwnerReferences(), owner))
-}
+// func (b *Service) setOwner(owner metav1.OwnerReference) {
+// 	b.configured.SetOwnerReferences(append(b.configured.GetOwnerReferences(), owner))
+// }

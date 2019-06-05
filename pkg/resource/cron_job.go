@@ -1,16 +1,19 @@
 package resource
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"github.com/operator-framework/operator-sdk/pkg/sdk"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/pantheon-systems/cassandra-operator/pkg/apis/database/v1alpha1"
-	opsdk "github.com/pantheon-systems/cassandra-operator/pkg/backend/k8s"
-	"k8s.io/api/batch/v1"
+	v1 "k8s.io/api/batch/v1"
 	batchv1beta1 "k8s.io/api/batch/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 var (
@@ -33,16 +36,18 @@ func NewRepairCronJob(cc *v1alpha1.CassandraCluster) *RepairCronJob {
 }
 
 // Reconcile the cron job's actual state with desired
-func (b *RepairCronJob) Reconcile(driver opsdk.Client) (sdk.Object, error) {
+func (b *RepairCronJob) Reconcile(ctx context.Context, driver client.Client) (runtime.Object, error) {
 	var err error
 
 	b.configureDesired()
 
-	existing := &batchv1beta1.CronJob{
-		TypeMeta:   GetCronJobTypeMeta(),
-		ObjectMeta: b.desired.ObjectMeta,
+	namespacedName := types.NamespacedName{
+		Namespace: b.desired.GetNamespace(),
+		Name:      b.desired.GetName(),
 	}
-	err = driver.Get(existing)
+
+	existing := &batchv1beta1.CronJob{}
+	err = driver.Get(ctx, namespacedName, existing)
 	if err != nil {
 		return nil, errors.New("could not get existing")
 	}
@@ -52,11 +57,11 @@ func (b *RepairCronJob) Reconcile(driver opsdk.Client) (sdk.Object, error) {
 		// we put our code here to reconcile the two and return
 		// the reconciled object
 		b.desired.ResourceVersion = existing.ResourceVersion
-		err = driver.Update(b.desired)
+		err = driver.Update(ctx, b.desired)
 		return b.desired, err
 	}
 
-	err = driver.Create(b.desired)
+	err = driver.Create(ctx, b.desired)
 	return b.desired, err
 }
 
@@ -82,7 +87,7 @@ func (b *RepairCronJob) configureDesired() {
 			},
 		},
 	}
-	b.setOwner(asOwner(b.cluster))
+	//b.setOwner(asOwner(b.cluster))
 }
 
 func (b *RepairCronJob) buildCronJobName() string {
@@ -143,6 +148,6 @@ func (b *RepairCronJob) buildCronJobEnvVars() []corev1.EnvVar {
 	return envs
 }
 
-func (b *RepairCronJob) setOwner(owner metav1.OwnerReference) {
-	b.desired.SetOwnerReferences(append(b.desired.GetOwnerReferences(), owner))
-}
+// func (b *RepairCronJob) setOwner(owner metav1.OwnerReference) {
+// 	b.desired.SetOwnerReferences(append(b.desired.GetOwnerReferences(), owner))
+// }
