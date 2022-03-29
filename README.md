@@ -1,6 +1,8 @@
 # Cassandra Operator
 This repository contains the cassandra cluster kubernetes operator. The operator consists of the CustomResourceDefinition (CRD) and a Kubernetes Controller. It is a work in progress.
 
+[![Unofficial](https://img.shields.io/badge/Pantheon-Unofficial-yellow?logo=pantheon&color=FFDC28)](https://pantheon.io/docs/oss-support-levels#unofficial)
+
 The image is stored at: https://quay.io/repository/getpantheon/cassandra-operator
 
 ## Operator-SDK
