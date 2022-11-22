@@ -1,14 +1,15 @@
-package controller
+package cassandracluster
 
 import (
+	"context"
 	"fmt"
-	"github.com/operator-framework/operator-sdk/pkg/sdk"
+
 	"github.com/pantheon-systems/cassandra-operator/pkg/backend/nodetool"
-	"github.com/pantheon-systems/cassandra-operator/pkg/resource"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/pantheon-systems/cassandra-operator/pkg/apis/database/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 )
 
@@ -19,24 +20,19 @@ type nodeStatusReporter interface {
 	GetHostID(node *corev1.Pod) (string, error)
 }
 
-// nodeStatusReporter is an interface that constricts the nodeStatusReporter implentation
-// needed behavior. So that we can better decouple this classes required contract vs the implementation
-type resourceListerUpdater interface {
-	List(namespace string, into sdk.Object, opts ...sdk.ListOption) error
-	Update(object sdk.Object) error
-}
-
 // ClusterStatusManager updates and calculates a clusters status
 type ClusterStatusManager struct {
 	nodeStatusReporter nodeStatusReporter
-	listerUpdater      resourceListerUpdater
+	k8sClient          client.Client
+	ctx                context.Context
 }
 
 // NewStatusManager returns a new ClusterStatusController to get the status of the cluster
-func NewStatusManager(statusReporter nodeStatusReporter, listerUpdater resourceListerUpdater) *ClusterStatusManager {
+func NewStatusManager(ctx context.Context, statusReporter nodeStatusReporter, k8sClient client.Client) *ClusterStatusManager {
 	return &ClusterStatusManager{
 		nodeStatusReporter: statusReporter,
-		listerUpdater:      listerUpdater,
+		k8sClient:          k8sClient,
+		ctx:                ctx,
 	}
 }
 
@@ -48,7 +44,7 @@ func (c *ClusterStatusManager) Update(cc *v1alpha1.CassandraCluster) error {
 	}
 
 	currentStatus.DeepCopyInto(&cc.Status)
-	return c.listerUpdater.Update(cc)
+	return c.k8sClient.Update(c.ctx, cc)
 }
 
 func (c *ClusterStatusManager) getClusterStatus(cc *v1alpha1.CassandraCluster) (*v1alpha1.ClusterStatus, error) {
@@ -227,9 +223,7 @@ func (c *ClusterStatusManager) groupPodsByState(pods []corev1.Pod) (*v1alpha1.No
 
 // GetClusterPods retrieves the pods for a specific cluster in a specific namespace
 func (c *ClusterStatusManager) getClusterPods(clusterName, namespace string, clusterLabels map[string]string) (*corev1.PodList, error) {
-	pods := &corev1.PodList{
-		TypeMeta: resource.GetPodTypeMeta(),
-	}
+	pods := &corev1.PodList{}
 
 	labelSelector := map[string]string{
 		"cluster": clusterName,
@@ -241,11 +235,12 @@ func (c *ClusterStatusManager) getClusterPods(clusterName, namespace string, clu
 		labelSelector["app"] = appName
 	}
 
-	listOpts := &metav1.ListOptions{
-		LabelSelector: labels.SelectorFromSet(labelSelector).String(),
+	listOpts := &client.ListOptions{
+		LabelSelector: labels.SelectorFromSet(labelSelector),
+		Namespace:     namespace,
 	}
 
-	err := c.listerUpdater.List(namespace, pods, sdk.WithListOptions(listOpts))
+	err := c.k8sClient.List(c.ctx, listOpts, pods)
 	if err != nil {
 		return nil, fmt.Errorf("Could not list pods for cluster %s: %s", clusterName, err)
 	}

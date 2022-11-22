@@ -1,13 +1,15 @@
 package k8s
 
 import (
-	"github.com/operator-framework/operator-sdk/pkg/sdk"
+	"context"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // finalizable is an kubernetes resource api object that supports finalizers
 type finalizable interface {
-	sdk.Object
+	runtime.Object
 	GetFinalizers() []string
 	SetFinalizers(finalizers []string)
 	GetDeletionTimestamp() *metav1.Time
@@ -15,15 +17,17 @@ type finalizable interface {
 
 // Finalizer manages the finalizers for resources in kubernetes
 type Finalizer struct {
-	driver Client
+	driver client.Client
 	value  string
+	ctx    context.Context
 }
 
 // NewFinalizer constructs a new finalizer manager
-func NewFinalizer(driver Client, finalizerValue string) *Finalizer {
+func NewFinalizer(ctx context.Context, driver client.Client, finalizerValue string) *Finalizer {
 	return &Finalizer{
 		driver: driver,
 		value:  finalizerValue,
+		ctx:    ctx,
 	}
 }
 
@@ -33,7 +37,7 @@ func (c *Finalizer) Add(resource finalizable) error {
 	resource.SetFinalizers(finalizers)
 
 	clone := resource.DeepCopyObject()
-	return c.driver.Update(clone)
+	return c.driver.Update(c.ctx, clone)
 }
 
 // Remove removes a finalizer from an object
@@ -48,7 +52,7 @@ func (c *Finalizer) Remove(resource finalizable) error {
 	resource.SetFinalizers(finalizers)
 
 	clone := resource.DeepCopyObject()
-	return c.driver.Update(clone)
+	return c.driver.Update(c.ctx, clone)
 }
 
 // IsDeletionCandidate checks if the resource is a candidate for deletion

@@ -1,14 +1,19 @@
 package resource
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"github.com/operator-framework/operator-sdk/pkg/sdk"
+
 	"github.com/pantheon-systems/cassandra-operator/pkg/apis/database/v1alpha1"
-	opsdk "github.com/pantheon-systems/cassandra-operator/pkg/backend/k8s"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // ServiceAccount is a reconciller for configured vs actual for service account
@@ -25,18 +30,20 @@ func NewServiceAccount(cc *v1alpha1.CassandraCluster) *ServiceAccount {
 }
 
 // Reconcile merges the actual state with the desired state to reconcile the core/v1 ServiceAccount resource
-func (b *ServiceAccount) Reconcile(driver opsdk.Client) (sdk.Object, error) {
+func (b *ServiceAccount) Reconcile(ctx context.Context, driver client.Client) (runtime.Object, error) {
 	err := b.buildConfigured()
 	if err != nil {
 		return nil, err
 	}
 
-	existing := &corev1.ServiceAccount{
-		TypeMeta:   GetServiceAccountTypeMeta(),
-		ObjectMeta: b.configured.ObjectMeta,
+	namespacedName := types.NamespacedName{
+		Namespace: b.cluster.GetNamespace(),
+		Name:      b.cluster.GetName(),
 	}
-	err = driver.Get(existing)
-	if err != nil {
+
+	existing := &corev1.ServiceAccount{}
+	err = driver.Get(ctx, namespacedName, existing)
+	if err != nil && !k8serrors.IsNotFound(err) {
 		return nil, errors.New("could not get existing")
 	}
 
@@ -45,7 +52,7 @@ func (b *ServiceAccount) Reconcile(driver opsdk.Client) (sdk.Object, error) {
 		return b.configured, nil
 	}
 
-	err = driver.Create(b.configured)
+	err = driver.Create(ctx, b.configured)
 	if err == nil || k8serrors.IsAlreadyExists(err) {
 		return b.configured, nil
 	}
@@ -70,11 +77,7 @@ func (b *ServiceAccount) buildConfigured() error {
 		},
 	}
 
-	b.setOwner(asOwner(b.cluster))
+	controllerutil.SetControllerReference(b.cluster, b.configured, scheme.Scheme)
 
 	return nil
-}
-
-func (b *ServiceAccount) setOwner(owner metav1.OwnerReference) {
-	b.configured.SetOwnerReferences(append(b.configured.GetOwnerReferences(), owner))
 }

@@ -1,15 +1,21 @@
 package resource
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"github.com/operator-framework/operator-sdk/pkg/sdk"
+
 	"github.com/pantheon-systems/cassandra-operator/pkg/apis/database/v1alpha1"
-	opsdk "github.com/pantheon-systems/cassandra-operator/pkg/backend/k8s"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 var (
@@ -46,19 +52,23 @@ func NewStatefulSet(cc *v1alpha1.CassandraCluster, opts ...BuilderOption) *State
 }
 
 // Reconcile merges the desired state with the actual state
-func (b *StatefulSet) Reconcile(driver opsdk.Client) (sdk.Object, error) {
+func (b *StatefulSet) Reconcile(ctx context.Context, driver client.Client) (runtime.Object, error) {
 	var err error
 
 	if b.options.ServiceAccountName == "" || b.options.ServiceName == "" {
 		return nil, fmt.Errorf("both ServiceAccountName and ServiceAccount are required: %s, %s", b.options.ServiceAccountName, b.options.ServiceName)
 	}
 
-	existing := &appsv1.StatefulSet{
-		TypeMeta:   GetStatefulSetTypeMeta(),
-		ObjectMeta: b.buildObjectMeta(),
+	objectMeta := b.buildObjectMeta()
+
+	namespacedName := types.NamespacedName{
+		Name:      objectMeta.GetName(),
+		Namespace: objectMeta.GetNamespace(),
 	}
-	err = driver.Get(existing)
-	if err != nil {
+
+	existing := &appsv1.StatefulSet{}
+	err = driver.Get(ctx, namespacedName, existing)
+	if err != nil && !k8serrors.IsNotFound(err) {
 		return nil, errors.New("could not get existing")
 	}
 
@@ -69,7 +79,7 @@ func (b *StatefulSet) Reconcile(driver opsdk.Client) (sdk.Object, error) {
 		b.calculateAutoBootstrap(0, 0)
 		b.configureDesired()
 
-		err = driver.Create(b.desired)
+		err = driver.Create(ctx, b.desired)
 
 		return b.desired, err
 	}
@@ -87,7 +97,7 @@ func (b *StatefulSet) Reconcile(driver opsdk.Client) (sdk.Object, error) {
 	b.desired.ResourceVersion = existing.ResourceVersion
 	// We are using Update here as we have the OnDelete update stratagy in place for the stateful set
 	// See https://kubernetes.io/docs/tutorials/stateful-application/basic-stateful-set/#updating-statefulsets
-	err = driver.Update(b.desired)
+	err = driver.Update(ctx, b.desired)
 
 	if err != nil {
 		return nil, err
@@ -215,7 +225,7 @@ func (b *StatefulSet) configureDesired() {
 
 	b.buildDesiredCassandraPodSpec()
 	b.buildLabels()
-	b.setOwner(asOwner(b.cluster))
+	controllerutil.SetControllerReference(b.cluster, b.desired, scheme.Scheme)
 	b.buildVolumeClaimTemplates()
 
 	// TODO: JvmAgent should be itoa or string enum
@@ -282,8 +292,4 @@ func (b *StatefulSet) buildVolumeClaimTemplates() {
 			},
 		},
 	}
-}
-
-func (b *StatefulSet) setOwner(owner metav1.OwnerReference) {
-	b.desired.SetOwnerReferences(append(b.desired.GetOwnerReferences(), owner))
 }

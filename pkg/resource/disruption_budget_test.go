@@ -1,17 +1,20 @@
 package resource_test
 
 import (
-	"errors"
-	"github.com/operator-framework/operator-sdk/pkg/sdk"
-	"github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
-	"github.com/pantheon-systems/cassandra-operator/pkg/apis/database/v1alpha1"
-	"github.com/pantheon-systems/cassandra-operator/pkg/backend/k8s"
-	"github.com/pantheon-systems/cassandra-operator/pkg/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
+	"context"
 	"reflect"
 	"testing"
 
+	"github.com/pantheon-systems/cassandra-operator/pkg/apis/database/v1alpha1"
+	"github.com/pantheon-systems/cassandra-operator/pkg/resource"
+	"github.com/stretchr/testify/assert"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	corev1 "k8s.io/api/core/v1"
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 )
 
@@ -21,16 +24,13 @@ var (
 
 func TestPodDisruptionBudget_Reconcile(t *testing.T) {
 	type fields struct {
-		cluster         *v1alpha1.CassandraCluster
-		actual          *policyv1beta1.PodDisruptionBudget
-		mockGetError    error
-		mockUpdateError error
-		mockCreateError error
+		cluster *v1alpha1.CassandraCluster
+		actual  *policyv1beta1.PodDisruptionBudget
 	}
 	tests := []struct {
 		name    string
 		fields  fields
-		want    sdk.Object
+		want    runtime.Object
 		wantErr bool
 	}{
 		{
@@ -59,10 +59,7 @@ func TestPodDisruptionBudget_Reconcile(t *testing.T) {
 					Name:      "test-cluster-1-cassandra",
 					Namespace: "test-namespace",
 					OwnerReferences: []metav1.OwnerReference{
-						{
-							Name:       "test-cluster-1",
-							Controller: &trueVar,
-						},
+						{Name: "test-cluster-1", APIVersion: "v1", Kind: "CassandraCluster"},
 					},
 				},
 				Spec: policyv1beta1.PodDisruptionBudgetSpec{
@@ -102,10 +99,7 @@ func TestPodDisruptionBudget_Reconcile(t *testing.T) {
 						Namespace:       "test-namespace",
 						ResourceVersion: "test-resource-version",
 						OwnerReferences: []metav1.OwnerReference{
-							{
-								Name:       "test-cluster-1",
-								Controller: &trueVar,
-							},
+							{Name: "test-cluster-1", APIVersion: "v1", Kind: "CassandraCluster"},
 						},
 					},
 					Spec: policyv1beta1.PodDisruptionBudgetSpec{
@@ -130,10 +124,7 @@ func TestPodDisruptionBudget_Reconcile(t *testing.T) {
 					Namespace:       "test-namespace",
 					ResourceVersion: "test-resource-version",
 					OwnerReferences: []metav1.OwnerReference{
-						{
-							Name:       "test-cluster-1",
-							Controller: &trueVar,
-						},
+						{Name: "test-cluster-1", APIVersion: "v1", Kind: "CassandraCluster"},
 					},
 				},
 				Spec: policyv1beta1.PodDisruptionBudgetSpec{
@@ -148,132 +139,38 @@ func TestPodDisruptionBudget_Reconcile(t *testing.T) {
 				},
 			},
 		},
-		{
-			name: "get-error",
-			fields: fields{
-				cluster: &v1alpha1.CassandraCluster{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-cluster-1",
-						Namespace: "test-namespace",
-						Labels: map[string]string{
-							"app": "test-app",
-						},
-					},
-					Spec: v1alpha1.ClusterSpec{
-						EnablePodDisruptionBudget: true,
-					},
-				},
-				mockGetError: errors.New("some error"),
-				actual:       nil,
-			},
-			want:    nil,
-			wantErr: true,
-		},
-		{
-			name: "create-error",
-			fields: fields{
-				cluster: &v1alpha1.CassandraCluster{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-cluster-1",
-						Namespace: "test-namespace",
-						Labels: map[string]string{
-							"app": "test-app",
-						},
-					},
-					Spec: v1alpha1.ClusterSpec{
-						EnablePodDisruptionBudget: true,
-					},
-				},
-				actual:          nil,
-				mockCreateError: errors.New("error creating"),
-			},
-			want:    nil,
-			wantErr: true,
-		},
-		{
-			name: "update-error",
-			fields: fields{
-				cluster: &v1alpha1.CassandraCluster{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-cluster-1",
-						Namespace: "test-namespace",
-						Labels: map[string]string{
-							"app": "test-app",
-						},
-					},
-					Spec: v1alpha1.ClusterSpec{
-						EnablePodDisruptionBudget: true,
-					},
-				},
-				actual: &policyv1beta1.PodDisruptionBudget{
-					TypeMeta: metav1.TypeMeta{
-						APIVersion: "policy/v1beta1",
-						Kind:       "PodDisruptionBudget",
-					},
-					ObjectMeta: metav1.ObjectMeta{
-						Name:            "test-cluster-1-cassandra",
-						Namespace:       "test-namespace",
-						ResourceVersion: "test-resource-version",
-						OwnerReferences: []metav1.OwnerReference{
-							{
-								Name:       "test-cluster-1",
-								Controller: &trueVar,
-							},
-						},
-					},
-					Spec: policyv1beta1.PodDisruptionBudgetSpec{
-						MinAvailable: &twoObj,
-						Selector: &metav1.LabelSelector{
-							MatchLabels: map[string]string{
-								"cluster": "test-cluster-1",
-								"state":   "serving",
-								"app":     "test-app",
-							},
-						},
-					},
-				},
-				mockUpdateError: errors.New("update error"),
-			},
-			want:    nil,
-			wantErr: true,
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockKubeClient := &k8s.MockClient{
-				GetCallback: func(into sdk.Object, opts ...sdk.GetOption) error {
-					if tt.fields.mockGetError != nil {
-						return tt.fields.mockGetError
-					}
+			s := scheme.Scheme
+			s.AddKnownTypes(corev1.SchemeGroupVersion, tt.fields.cluster)
 
-					if tt.fields.actual != nil {
-						if err := k8sutil.RuntimeObjectIntoRuntimeObject(tt.fields.actual, into); err != nil {
-							return err
-						}
-					}
-					return nil
-				},
-				CreateCallback: func(object sdk.Object) error {
-					if tt.fields.mockCreateError != nil {
-						return tt.fields.mockCreateError
-					}
-					return nil
-				},
-				UpdateCallback: func(object sdk.Object) error {
-					if tt.fields.mockUpdateError != nil {
-						return tt.fields.mockUpdateError
-					}
-					return nil
-				},
+			objs := []runtime.Object{}
+			if tt.fields.actual != nil {
+				objs = append(objs, tt.fields.actual)
 			}
+
+			mockClient := fake.NewFakeClient(objs...)
 			b := resource.NewPodDisruptionBudget(tt.fields.cluster)
-			got, err := b.Reconcile(mockKubeClient)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("PodDisruptionBudget.Reconcile() error = %v, wantErr %v", err, tt.wantErr)
+			result, err := b.Reconcile(context.TODO(), mockClient)
+			if tt.wantErr {
+				assert.Error(t, err)
 				return
+			} else {
+				assert.NoError(t, err)
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("PodDisruptionBudget.Reconcile() = %v, want %v", got, tt.want)
+
+			// we need to ignore
+			//   ObjectMeta.OwnerReferences.Controller
+			//   ObjectMeta.OwnerReferences.BlockOwnerDeletion
+			ctrlOwnerRef := reflect.ValueOf(result).Elem().FieldByName("ObjectMeta").FieldByName("OwnerReferences").Index(0)
+			ctrl := ctrlOwnerRef.FieldByName("Controller")
+			ctrl.Set(reflect.Zero(ctrl.Type()))
+			blockOwnerDeletion := ctrlOwnerRef.FieldByName("BlockOwnerDeletion")
+			blockOwnerDeletion.Set(reflect.Zero(blockOwnerDeletion.Type()))
+
+			if !reflect.DeepEqual(result, tt.want) {
+				t.Errorf("ServiceAccount.Reconcile() = %v, want %v", result, tt.want)
 			}
 		})
 	}
