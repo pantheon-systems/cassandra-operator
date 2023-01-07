@@ -3,11 +3,12 @@ version: 2
 jobs:
   deps:
     docker:
-      - image: circleci/golang:1.11
+      - image: circleci/golang:1.14
     working_directory: /go/src/github.com/pantheon-systems/cassandra-operator
     steps:
       - checkout
       - run: make install-sdk
+      - run: git config --global http.https://gopkg.in.followRedirects true
       - run: make deps
       - persist_to_workspace:
           root: /go
@@ -16,7 +17,7 @@ jobs:
             - ./src/github.com/pantheon-systems/cassandra-operator
   test:
     docker:
-      - image: circleci/golang:1.11
+      - image: circleci/golang:1.14
     working_directory: /go/src/github.com/pantheon-systems/cassandra-operator
     steps:
       - attach_workspace:
@@ -25,7 +26,7 @@ jobs:
       - run: make test-circle
   build:
     docker:
-      - image: circleci/golang:1.11
+      - image: circleci/golang:1.14
     working_directory: /go/src/github.com/pantheon-systems/cassandra-operator
     steps:
       - attach_workspace:
@@ -45,6 +46,8 @@ workflows:
           requires:
             - deps
       - build:
+          context:
+            - docker-executor-auth
           requires:
             - deps
 
